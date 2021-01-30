@@ -4,6 +4,8 @@ import android.content.Context;
 import android.os.Handler;
 
 import androidx.annotation.NonNull;
+import android.content.ContentValues;
+import android.database.sqlite.SQLiteDatabase;
 
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -27,6 +29,14 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
     private Runnable positionUpdates;
     private Context context;
     private boolean seekFinish;
+    private FeedReaderDbHelper dbHelper;
+    private SQLiteDatabase db;
+    private Integer book_id;
+    private Integer chapter_index;
+
+
+
+
 
     public static void registerWith(final Registrar registrar) {
         final MethodChannel channel = new MethodChannel(registrar.messenger(), "xyz.luan/audioplayers");
@@ -49,10 +59,16 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
         this.context = binding.getApplicationContext();
         this.seekFinish = false;
         channel.setMethodCallHandler(this);
+
+        this.dbHelper = new FeedReaderDbHelper(this.context);
+        this.db = this.dbHelper.getWritableDatabase();
+
     }
 
     @Override
-    public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {}
+    public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+        this.dbHelper.close();
+    }
 
     @Override
     public void onMethodCall(final MethodCall call, final MethodChannel.Result response) {
@@ -115,6 +131,13 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
                 final String url = call.argument("url");
                 final boolean isLocal = call.argument("isLocal");
                 player.setUrl(url, isLocal, context.getApplicationContext());
+                break;
+            }
+            case "setBookInfo": {
+                final int bookId = call.argument("bookId");
+                final int chapterIndex = call.argument("chapterIndex");
+                this.book_id = bookId;
+                this.chapter_index = chapterIndex;
                 break;
             }
             case "setPlaybackRate": {
@@ -184,7 +207,7 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
         if (positionUpdates != null) {
             return;
         }
-        positionUpdates = new UpdateCallback(mediaPlayers, channel, handler, this);
+        positionUpdates = new UpdateCallback(mediaPlayers, channel, handler, this.db, this.book_id,this.chapter_index,this);
         handler.post(positionUpdates);
     }
 
@@ -205,15 +228,24 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
         private final WeakReference<Map<String, Player>> mediaPlayers;
         private final WeakReference<MethodChannel> channel;
         private final WeakReference<Handler> handler;
+        private final WeakReference<SQLiteDatabase> db;
+        private final WeakReference<Integer> book_id;
+        private final WeakReference<Integer> chapter_index;
         private final WeakReference<AudioplayersPlugin> audioplayersPlugin;
 
         private UpdateCallback(final Map<String, Player> mediaPlayers,
                                final MethodChannel channel,
                                final Handler handler,
+                               final SQLiteDatabase db,
+                               final Integer book_id,
+                               final Integer chapter_index,
                                final AudioplayersPlugin audioplayersPlugin) {
             this.mediaPlayers = new WeakReference<>(mediaPlayers);
             this.channel = new WeakReference<>(channel);
             this.handler = new WeakReference<>(handler);
+            this.db = new WeakReference<>(db);
+            this.book_id = new WeakReference<>(book_id);
+            this.chapter_index = new WeakReference<>(chapter_index);
             this.audioplayersPlugin = new WeakReference<>(audioplayersPlugin);
         }
 
@@ -223,6 +255,9 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
             final MethodChannel channel = this.channel.get();
             final Handler handler = this.handler.get();
             final AudioplayersPlugin audioplayersPlugin = this.audioplayersPlugin.get();
+            final SQLiteDatabase db =this.db.get();
+            final Integer book_id =this.book_id.get();
+            final Integer chapter_index =this.chapter_index.get();
 
             if (mediaPlayers == null || channel == null || handler == null || audioplayersPlugin == null) {
                 if (audioplayersPlugin != null) {
@@ -241,6 +276,17 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
                     final String key = player.getPlayerId();
                     final int duration = player.getDuration();
                     final int time = player.getCurrentPosition();
+
+                    ContentValues values = new ContentValues();
+                    values.put(FeedReaderContract.FeedEntry.COLUMN_NAME_BOOK_ID, book_id);
+                    values.put(FeedReaderContract.FeedEntry.COLUMN_NAME_CHAPTER_INDEX, chapter_index);
+                    values.put(FeedReaderContract.FeedEntry.COLUMN_NAME_TIME, time);
+
+                    
+                    // Insert the new row, returning the primary key value of the new row
+                    db.insert(FeedReaderContract.FeedEntry.TABLE_NAME, null, values);
+
+
                     channel.invokeMethod("audio.onDuration", buildArguments(key, duration));
                     channel.invokeMethod("audio.onCurrentPosition", buildArguments(key, time));
                     if (audioplayersPlugin.seekFinish) {
@@ -255,9 +301,63 @@ public class AudioplayersPlugin implements MethodCallHandler, FlutterPlugin {
             if (nonePlaying) {
                 audioplayersPlugin.stopPositionUpdates();
             } else {
-                handler.postDelayed(this, 200);
+                handler.postDelayed(this, 50);
             }
         }
+
     }
 }
+
+//public final class FeedReaderContract {
+//    // To prevent someone from accidentally instantiating the contract class,
+//    // make the constructor private.
+//    private FeedReaderContract() {}
+//
+//    /* Inner class that defines the table contents */
+//    public static class FeedEntry implements BaseColumns {
+//        public static final String TABLE_NAME = "tracker";
+//        public static final String COLUMN_NAME_BOOK_ID = "book_id";
+//        public static final String COLUMN_NAME_CHAPTER_INDEX = "chapter_index";
+//        public static final String COLUMN_NAME_TIME = "time";
+//
+//    }
+//
+//}
+
+
+
+
+
+
+
+
+
+// private const val SQL_CREATE_ENTRIES =
+//         "CREATE TABLE IF NOT EXISTS tracker (" +
+//                 "book_id INTEGER," +
+//                 "chapter_index INTEGER," +
+//                 "time REAL, UNIQUE(book_id, chapter_index) ON CONFLICT REPLACE)"
+
+
+// private const val SQL_DELETE_ENTRIES = "DROP TABLE IF EXISTS tracker"
+
+// class FeedReaderDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+//     override fun onCreate(db: SQLiteDatabase) {
+//         db.execSQL(SQL_CREATE_ENTRIES)
+//     }
+//     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+//         // This database is only a cache for online data, so its upgrade policy is
+//         // to simply to discard the data and start over
+//         db.execSQL(SQL_DELETE_ENTRIES)
+//         onCreate(db)
+//     }
+//     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+//         onUpgrade(db, oldVersion, newVersion)
+//     }
+//     companion object {
+//         // If you change the database schema, you must increment the database version.
+//         const val DATABASE_VERSION = 1
+//         const val DATABASE_NAME = "tracker.db"
+//     }
+// }
 

@@ -58,6 +58,12 @@ public class WrappedMediaPlayer extends Player implements MediaPlayer.OnPrepared
         }
     }
 
+    // @Override
+    // void setBookInfo(int bookId, int chapterIndex) {
+    //         this.bookId = bookId;
+    //         this.chapterIndex = chapterIndex;
+    // }
+
     @Override
     void setVolume(double volume) {
         if (this.volume != volume) {

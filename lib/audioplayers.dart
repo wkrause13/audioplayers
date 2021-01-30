@@ -300,7 +300,10 @@ class AudioPlayer {
   PlayerMode mode;
 
   /// Creates a new instance and assigns an unique id to it.
-  AudioPlayer({this.mode = PlayerMode.MEDIA_PLAYER, this.playerId}) {
+  AudioPlayer({
+    this.mode = PlayerMode.MEDIA_PLAYER,
+    this.playerId,
+  }) {
     this.mode ??= PlayerMode.MEDIA_PLAYER;
     this.playerId ??= _uuid.v4();
     players[playerId] = this;
@@ -536,6 +539,13 @@ class AudioPlayer {
     isLocal = isLocalUrl(url);
     return _invokeMethod('setUrl',
         {'url': url, 'isLocal': isLocal, 'respectSilence': respectSilence});
+  }
+
+  Future<void> setBookInfo({int bookId, int chapterIndex}) {
+    return _invokeMethod('setBookInfo', {
+      'bookId': bookId,
+      'chapterIndex': chapterIndex,
+    });
   }
 
   /// Get audio duration after setting url.
